@@ -1,5 +1,5 @@
 // Imports
-use crate::document::background;
+use crate::document::{Layout, background};
 use crate::engine::import::XoppImportPrefs;
 use crate::fileformats::{FileFormatLoader, rnoteformat, xoppformat};
 use crate::store::{ChronoComponent, StrokeKey};
@@ -133,14 +133,40 @@ impl EngineSnapshot {
                         xopp_import_prefs.dpi,
                     ));
 
+                if xopp_import_prefs.adjust_document {
+                    engine.document.config.layout = Layout::FixedSize;
+                }
+
                 if let Some(first_page) = xopp_file.xopp_root.pages.first()
-                    && let xoppformat::XoppBackgroundType::Solid {
-                        color: _color,
-                        style: _style,
-                    } = &first_page.background.bg_type
+                    && let xoppformat::XoppBackgroundType::Solid { color, style } =
+                        &first_page.background.bg_type
                 {
-                    // Xopp background styles are not compatible with Rnotes, so everything is plain for now
-                    engine.document.config.background.pattern = background::PatternStyle::None;
+                    engine.document.config.background.color =
+                        crate::utils::color_from_xopp(*color);
+                    engine.document.config.background.pattern = match style {
+                        xoppformat::XoppBackgroundSolidStyle::Plain => background::PatternStyle::None,
+                        xoppformat::XoppBackgroundSolidStyle::Lined
+                        | xoppformat::XoppBackgroundSolidStyle::Ruled
+                        | xoppformat::XoppBackgroundSolidStyle::Staves => background::PatternStyle::Lines,
+                        xoppformat::XoppBackgroundSolidStyle::Graph => background::PatternStyle::Grid,
+                        xoppformat::XoppBackgroundSolidStyle::Dotted => background::PatternStyle::Dots,
+                        xoppformat::XoppBackgroundSolidStyle::IsometricDotted => {
+                            background::PatternStyle::IsometricDots
+                        }
+                        xoppformat::XoppBackgroundSolidStyle::IsometricGraph => {
+                            background::PatternStyle::IsometricGrid
+                        }
+                    };
+
+                    // Xournal++ stores background dimensions in 72 DPI points. Rnote's
+                    // pattern defaults are in document units, so scale them to the import DPI.
+                    let pattern_spacing = crate::utils::convert_value_dpi(
+                        32.0,
+                        xoppformat::XoppFile::DPI,
+                        xopp_import_prefs.dpi,
+                    );
+                    engine.document.config.background.pattern_size =
+                        Vector2::splat(pattern_spacing);
                 }
 
                 // Offsetting as rnote has one global coordinate space
